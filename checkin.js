@@ -150,6 +150,7 @@ async function checkin(cookieStr) {
     headers: {
       Cookie: cookieStr,
       Referer: `${BASE_URL}/user/panel`,
+      Origin: BASE_URL,
     },
   });
 
@@ -187,6 +188,85 @@ async function checkin(cookieStr) {
   }
 }
 
+/**
+ * 访问用户面板页面，建立服务端会话
+ * 这是签到的必要前置步骤，否则会返回"请刷新页面后重试"
+ */
+async function visitPanel(cookieStr) {
+  console.log(`[${beijingTime()}] 正在访问用户面板 ...`);
+
+  const res = await request("GET", `${BASE_URL}/user/panel`, {
+    headers: {
+      Cookie: cookieStr,
+      Referer: `${BASE_URL}/auth/login`,
+      Origin: BASE_URL,
+    },
+  });
+
+  console.log(`  面板响应状态: ${res.status}`);
+
+  // 收集面板页设置的新 cookie
+  if (res.cookies && res.cookies.length > 0) {
+    const newCookies = parseCookies(res.cookies);
+    console.log(`  面板新增 cookie: ${newCookies}`);
+    return cookieStr ? cookieStr + "; " + newCookies : newCookies;
+  }
+
+  return cookieStr;
+}
+
+// ========== Server酱3 推送 ==========
+
+/**
+ * 通过 Server酱3 发送消息到微信
+ * 参考: https://github.com/Heover/deepseekRest
+ * API: POST https://{uid}.push.ft07.com/send/{sendkey}.send
+ */
+async function sendServerChanMessage(title, message) {
+  const uid = process.env.SERVER_UID;
+  const sendkey = process.env.SERVER_KEY;
+
+  if (!uid || !sendkey) {
+    console.log("  ⚠ 未配置 SERVER_UID 或 SERVER_KEY，跳过 Server酱3 推送");
+    return { success: false, error: "未配置 SERVER_UID 或 SERVER_KEY" };
+  }
+
+  console.log(`[${beijingTime()}] 正在通过 Server酱3 推送消息...`);
+
+  const body = querystring.stringify({ title, desp: message });
+
+  try {
+    const res = await request("POST", `https://${uid}.push.ft07.com/send/${sendkey}.send`, {
+      body,
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      },
+    });
+
+    console.log(`  Server酱3 响应状态: ${res.status}`);
+    console.log(`  Server酱3 响应内容: ${res.body}`);
+
+    let result;
+    try {
+      result = JSON.parse(res.body);
+    } catch {
+      return { success: false, error: `响应解析失败: ${res.body}` };
+    }
+
+    // Server酱3 返回 {"code": 0, "message": "", "data": {...}}
+    if (result.code === 0) {
+      console.log("  ✅ Server酱3 推送成功");
+      return { success: true, data: result };
+    } else {
+      console.log(`  ❌ Server酱3 推送失败: ${result.message || "未知错误"}`);
+      return { success: false, error: result.message || "未知错误" };
+    }
+  } catch (err) {
+    console.log(`  ❌ Server酱3 请求失败: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+}
+
 // ========== 主流程 ==========
 
 async function main() {
@@ -206,8 +286,32 @@ async function main() {
     // 等一小会
     await new Promise((r) => setTimeout(r, 1000));
 
-    // 第二步：签到
-    const result = await checkin(cookieStr);
+    // 第二步：访问用户面板，建立会话
+    const panelCookie = await visitPanel(cookieStr);
+
+    // 等一小会
+    await new Promise((r) => setTimeout(r, 500));
+
+    // 第三步：签到
+    const result = await checkin(panelCookie);
+
+    // 第四步：通过 Server酱3 推送签到结果
+    const now = beijingTime();
+    let pushTitle, pushMessage;
+    if (result.success) {
+      pushTitle = "✅ 豆奶签到成功";
+      pushMessage =
+        `时间: ${now}\n` +
+        `消息: ${result.msg}\n` +
+        `获得流量: ${result.traffic || "未知"}\n` +
+        `账号延长: ${result.duration || "未知"}`;
+    } else {
+      pushTitle = "❌ 豆奶签到失败";
+      pushMessage =
+        `时间: ${now}\n` +
+        `消息: ${result.msg}`;
+    }
+    await sendServerChanMessage(pushTitle, pushMessage);
 
     console.log("");
     console.log("========== 签到结束 ==========");
