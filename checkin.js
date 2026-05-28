@@ -1,10 +1,34 @@
 const https = require("https");
 const http = require("http");
+const fs = require("fs");
+const path = require("path");
 const querystring = require("querystring");
 const { URL } = require("url");
 
+// ========== 加载 .env（本地调试用） ==========
+try {
+  const envPath = path.join(__dirname, ".env");
+  if (fs.existsSync(envPath)) {
+    const lines = fs.readFileSync(envPath, "utf-8").split(/\r?\n/);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const idx = trimmed.indexOf("=");
+      if (idx === -1) continue;
+      const key = trimmed.slice(0, idx).trim();
+      const val = trimmed.slice(idx + 1).trim();
+      if (!process.env[key]) {
+        process.env[key] = val;
+      }
+    }
+    console.log("已加载 .env 文件");
+  }
+} catch (_) {
+  // 忽略加载错误
+}
+
 // ========== 配置 ==========
-// 从环境变量读取账号密码（GitHub Secrets），本地测试可直接修改默认值
+// 优先环境变量（GitHub Secrets），.env 文件作为本地调试的后备
 const EMAIL = process.env.DOUNAI_EMAIL;
 const PASSWD = process.env.DOUNAI_PASSWD;
 
