@@ -1,0 +1,11 @@
+{
+  "name": "dounai-checkin",
+  "version": "1.0.0",
+  "description": "dounai.pro 自动签到工具",
+  "main": "checkin.js",
+  "scripts": {
+    "checkin": "node checkin.js"
+  },
+  "keywords": ["checkin", "dounai"],
+  "license": "MIT"
+}

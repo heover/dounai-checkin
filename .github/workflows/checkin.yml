@@ -1,0 +1,28 @@
+name: Dounai Auto Checkin
+
+on:
+  schedule:
+    # 每天北京时间 00:07 (UTC 16:07) 执行
+    - cron: "7 16 * * *"
+  # 允许手动触发
+  workflow_dispatch:
+
+jobs:
+  checkin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 运行签到脚本
+        env:
+          DOUNAI_EMAIL: ${{ secrets.DOUNAI_EMAIL }}
+          DOUNAI_PASSWD: ${{ secrets.DOUNAI_PASSWD }}
+        run: node checkin.js
