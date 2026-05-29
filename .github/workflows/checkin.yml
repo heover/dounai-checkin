@@ -25,4 +25,6 @@ jobs:
         env:
           DOUNAI_EMAIL: ${{ secrets.DOUNAI_EMAIL }}
           DOUNAI_PASSWD: ${{ secrets.DOUNAI_PASSWD }}
+          SERVER_UID: ${{ secrets.SERVER_UID }}
+          SERVER_KEY: ${{ secrets.SERVER_KEY }}
         run: node checkin.js
