@@ -1,30 +1,25 @@
-name: Dounai Auto Checkin
+name: 豆奶自动签到
 
 on:
   schedule:
-    # 每天北京时间 00:07 (UTC 16:07) 执行
+    # 每天北京时间 00:07 (UTC 16:07)
     - cron: "7 16 * * *"
-  # 允许手动触发
   workflow_dispatch:
 
 jobs:
-  checkin:
+  main:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
-      - name: Checkout 代码
-        uses: actions/checkout@v4
-
-      - name: 设置 Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "20"
-
-      - name: 运行签到脚本
+      - name: 执行签到
         env:
           DOUNAI_EMAIL: ${{ secrets.DOUNAI_EMAIL }}
           DOUNAI_PASSWD: ${{ secrets.DOUNAI_PASSWD }}
           SERVER_UID: ${{ secrets.SERVER_UID }}
           SERVER_KEY: ${{ secrets.SERVER_KEY }}
-        run: node checkin.js
+        run: node scripts/checkin.mjs

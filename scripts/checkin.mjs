@@ -1,13 +1,14 @@
-const https = require("https");
-const http = require("http");
-const fs = require("fs");
-const path = require("path");
-const querystring = require("querystring");
-const { URL } = require("url");
+import https from "node:https";
+import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { stringify } from "node:querystring";
+import { fileURLToPath } from "node:url";
 
 // ========== 加载 .env（本地调试用） ==========
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 try {
-  const envPath = path.join(__dirname, ".env");
+  const envPath = path.join(__dirname, "..", ".env");
   if (fs.existsSync(envPath)) {
     const lines = fs.readFileSync(envPath, "utf-8").split(/\r?\n/);
     for (const line of lines) {
@@ -28,10 +29,8 @@ try {
 }
 
 // ========== 配置 ==========
-// 优先环境变量（GitHub Secrets），.env 文件作为本地调试的后备
 const EMAIL = process.env.DOUNAI_EMAIL;
 const PASSWD = process.env.DOUNAI_PASSWD;
-
 const BASE_URL = "https://dounai.pro";
 
 // ========== 工具函数 ==========
@@ -73,7 +72,6 @@ function request(method, urlStr, opts = {}) {
       let data = "";
       res.on("data", (chunk) => (data += chunk));
       res.on("end", () => {
-        // 收集 set-cookie
         const cookies = res.headers["set-cookie"] || [];
         resolve({
           status: res.statusCode,
@@ -111,19 +109,12 @@ function parseCookies(setCookieHeaders) {
   return cookies.join("; ");
 }
 
-/**
- * 格式化北京时间
- */
-function beijingTime() {
-  return new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
-}
-
 // ========== 签到流程 ==========
 
 async function login() {
-  console.log(`[${beijingTime()}] 正在登录 dounai.pro ...`);
+  console.log("正在登录 dounai.pro ...");
 
-  const body = querystring.stringify({
+  const body = stringify({
     email: EMAIL,
     passwd: PASSWD,
   });
@@ -131,7 +122,6 @@ async function login() {
   const res = await request("POST", `${BASE_URL}/auth/login`, { body });
 
   console.log(`  登录响应状态: ${res.status}`);
-  console.log(`  登录响应内容: ${res.body}`);
 
   if (res.cookies.length === 0) {
     console.warn("  ⚠ 登录未返回任何 cookie，请检查账号密码是否正确");
@@ -144,7 +134,7 @@ async function login() {
 }
 
 async function checkin(cookieStr) {
-  console.log(`[${beijingTime()}] 正在签到 ...`);
+  console.log("正在签到 ...");
 
   const res = await request("POST", `${BASE_URL}/user/checkin`, {
     headers: {
@@ -165,7 +155,6 @@ async function checkin(cookieStr) {
   }
 
   if (result.ret === 1) {
-    // 从返回消息中提取流量数和时长
     const trafficMatch = result.msg.match(/(\d+\.?\d*\s*[KMG]?B?)流量/);
     const durationMatch = result.msg.match(/延长\s*(\d+\.?\d*)\s*小时/);
 
@@ -174,12 +163,9 @@ async function checkin(cookieStr) {
 
     if (traffic && duration) {
       console.log(`  ✅ 签到成功！${result.msg}`);
-      console.log(`  📊 获得流量: ${traffic}`);
-      console.log(`  ⏱ 账号延长: ${duration}`);
       return { success: true, msg: result.msg, traffic, duration };
     } else {
       console.log(`  ❌ 签到响应异常：未检测到流量或时长信息`);
-      console.log(`  📋 原始消息: ${result.msg}`);
       return { success: false, msg: result.msg, traffic, duration };
     }
   } else {
@@ -190,10 +176,9 @@ async function checkin(cookieStr) {
 
 /**
  * 访问用户面板页面，建立服务端会话
- * 这是签到的必要前置步骤，否则会返回"请刷新页面后重试"
  */
 async function visitPanel(cookieStr) {
-  console.log(`[${beijingTime()}] 正在访问用户面板 ...`);
+  console.log("正在访问用户面板 ...");
 
   const res = await request("GET", `${BASE_URL}/user/panel`, {
     headers: {
@@ -205,10 +190,8 @@ async function visitPanel(cookieStr) {
 
   console.log(`  面板响应状态: ${res.status}`);
 
-  // 收集面板页设置的新 cookie
   if (res.cookies && res.cookies.length > 0) {
     const newCookies = parseCookies(res.cookies);
-    console.log(`  面板新增 cookie: ${newCookies}`);
     return cookieStr ? cookieStr + "; " + newCookies : newCookies;
   }
 
@@ -219,7 +202,6 @@ async function visitPanel(cookieStr) {
 
 /**
  * 通过 Server酱3 发送消息到微信
- * 参考: https://github.com/Heover/deepseekRest
  * API: POST https://{uid}.push.ft07.com/send/{sendkey}.send
  */
 async function sendServerChanMessage(title, message) {
@@ -227,13 +209,13 @@ async function sendServerChanMessage(title, message) {
   const sendkey = process.env.SERVER_KEY;
 
   if (!uid || !sendkey) {
-    console.log("  ⚠ 未配置 SERVER_UID 或 SERVER_KEY，跳过 Server酱3 推送");
-    return { success: false, error: "未配置 SERVER_UID 或 SERVER_KEY" };
+    console.log("  ⚠ 未配置 SERVER_UID 或 SERVER_KEY，跳过推送");
+    return { success: false, error: "未配置" };
   }
 
-  console.log(`[${beijingTime()}] 正在通过 Server酱3 推送消息...`);
+  console.log("正在通过 Server酱3 推送消息...");
 
-  const body = querystring.stringify({ title, desp: message });
+  const body = stringify({ title, desp: message });
 
   try {
     const res = await request("POST", `https://${uid}.push.ft07.com/send/${sendkey}.send`, {
@@ -244,7 +226,6 @@ async function sendServerChanMessage(title, message) {
     });
 
     console.log(`  Server酱3 响应状态: ${res.status}`);
-    console.log(`  Server酱3 响应内容: ${res.body}`);
 
     let result;
     try {
@@ -253,16 +234,15 @@ async function sendServerChanMessage(title, message) {
       return { success: false, error: `响应解析失败: ${res.body}` };
     }
 
-    // Server酱3 返回 {"code": 0, "message": "", "data": {...}}
     if (result.code === 0) {
-      console.log("  ✅ Server酱3 推送成功");
+      console.log("  ✅ 推送成功");
       return { success: true, data: result };
     } else {
-      console.log(`  ❌ Server酱3 推送失败: ${result.message || "未知错误"}`);
+      console.log(`  ❌ 推送失败: ${result.message || "未知错误"}`);
       return { success: false, error: result.message || "未知错误" };
     }
   } catch (err) {
-    console.log(`  ❌ Server酱3 请求失败: ${err.message}`);
+    console.log(`  ❌ 请求失败: ${err.message}`);
     return { success: false, error: err.message };
   }
 }
@@ -275,41 +255,31 @@ async function main() {
   console.log("");
 
   try {
-    // 第一步：登录
+    // 1. 登录
     const cookieStr = await login();
-
     if (!cookieStr) {
       console.error("❌ 登录失败：未获取到 cookie，退出");
       process.exit(1);
     }
 
-    // 等一小会
     await new Promise((r) => setTimeout(r, 1000));
 
-    // 第二步：访问用户面板，建立会话
+    // 2. 访问面板建立会话
     const panelCookie = await visitPanel(cookieStr);
 
-    // 等一小会
     await new Promise((r) => setTimeout(r, 500));
 
-    // 第三步：签到
+    // 3. 签到
     const result = await checkin(panelCookie);
 
-    // 第四步：通过 Server酱3 推送签到结果
-    const now = beijingTime();
+    // 4. 推送结果（简洁，不含时间）
     let pushTitle, pushMessage;
     if (result.success) {
       pushTitle = "✅ 豆奶签到成功";
-      pushMessage =
-        `时间: ${now}\n` +
-        `消息: ${result.msg}\n` +
-        `获得流量: ${result.traffic || "未知"}\n` +
-        `账号延长: ${result.duration || "未知"}`;
+      pushMessage = `${result.msg}`;
     } else {
       pushTitle = "❌ 豆奶签到失败";
-      pushMessage =
-        `时间: ${now}\n` +
-        `消息: ${result.msg}`;
+      pushMessage = `${result.msg}`;
     }
     await sendServerChanMessage(pushTitle, pushMessage);
 
@@ -321,6 +291,10 @@ async function main() {
     }
   } catch (err) {
     console.error(`❌ 执行出错: ${err.message}`);
+
+    // 推送失败通知
+    await sendServerChanMessage("❌ 豆奶签到异常", `执行出错: ${err.message}`);
+
     process.exit(1);
   }
 }
